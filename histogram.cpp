@@ -8,6 +8,7 @@ int main()
     static const unsigned CHUNK    = 1<<16;
     static const unsigned BIN      = 1<<8;
     static const unsigned ITER     = CHUNK/sizeof(unsigned);
+    static const unsigned WARP     = 32;
 
     // simple vector addition example
     std::vector<unsigned> inbuf(DATASIZE/sizeof(unsigned));
@@ -23,12 +24,12 @@ int main()
         av0[idx] = idx[0]*1234567890;
     });
 
-    concurrency::parallel_for_each (av0.extent/ITER, [=](concurrency::index<1> idx) restrict(amp)
+    concurrency::parallel_for_each ((av0.extent/ITER).tile<WARP>(), [=](concurrency::tiled_index<WARP> idx) restrict(amp)
     {
-        unsigned freq[BIN];
+        tile_static unsigned freq[BIN*WARP];
         for (int k=0; k<BIN; k++)
-            freq[k] = 0;
-        for (int i=idx[0]*ITER,k=0; k<ITER; k++,i++)
+            freq[k*WARP+idx.local[0]] = 0;
+        for (int i=idx.global[0]*ITER,k=0; k<ITER; k++,i++)
         {
             unsigned x = av0[i];
             freq[ x      % BIN]++;
@@ -36,8 +37,8 @@ int main()
             freq[(x>>16) % BIN]++;
             freq[(x>>24) % BIN]++;
         }
-        for (int i=idx[0]*BIN,k=0; k<BIN; k++,i++)
-            av1[i] = freq[k];
+        for (int i=idx.global[0]*BIN,k=0; k<BIN; k++,i++)
+            av1[i] = freq[k*WARP+idx.local[0]];
     });
 
     av1.synchronize();
