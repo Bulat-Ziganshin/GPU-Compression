@@ -4,36 +4,39 @@ using namespace concurrency;
 
 int main()
 {
-    // simple vector addition example
-    std::vector<unsigned> inbuf(1<<27);
-    std::vector<unsigned> outbuf((1<<27)/64);
+    static const unsigned DATASIZE = 1<<29;
+    static const unsigned CHUNK    = 1<<16;
+    static const unsigned BIN      = 1<<8;
+    static const unsigned ITER     = CHUNK/sizeof(unsigned);
 
-    concurrency::array_view<const unsigned, 1> av0( inbuf.size(),  inbuf);
+    // simple vector addition example
+    std::vector<unsigned> inbuf(DATASIZE/sizeof(unsigned));
+    std::vector<unsigned> outbuf((inbuf.size()/CHUNK)*BIN);
+
+    concurrency::array_view<unsigned, 1> av0( inbuf.size(),  inbuf);
     concurrency::array_view<unsigned, 1> av1(outbuf.size(), outbuf);
-//    av0.discard_data();
+    av0.discard_data();
     av1.discard_data();
 
-/*
-    concurrency::parallel_for_each(av0.extent, [=](concurrency::index<1> idx) restrict(amp)
+    concurrency::parallel_for_each (av0.extent, [=](concurrency::index<1> idx) restrict(amp)
     {
-      av0[idx] = idx[0];
+        av0[idx] = idx[0]*1234567890;
     });
-*/
 
-    concurrency::parallel_for_each(av0.extent/16384, [=](concurrency::index<1> idx) restrict(amp)
+    concurrency::parallel_for_each (av0.extent/ITER, [=](concurrency::index<1> idx) restrict(amp)
     {
-        unsigned freq[256];
-        for (int k=0; k<256; k++)
+        unsigned freq[BIN];
+        for (int k=0; k<BIN; k++)
             freq[k] = 0;
-        for (int i=idx[0]*16384,k=0; k<16384; k++,i++)
+        for (int i=idx[0]*ITER,k=0; k<ITER; k++,i++)
         {
             unsigned x = av0[i];
-            freq[ x      & 255]++;
-            freq[(x>> 8) & 255]++;
-            freq[(x>>16) & 255]++;
-            freq[(x>>24) & 255]++;
+            freq[ x      % BIN]++;
+            freq[(x>> 8) % BIN]++;
+            freq[(x>>16) % BIN]++;
+            freq[(x>>24) % BIN]++;
         }
-        for (int i=idx[0]*256,k=0; k<256; k++,i++)
+        for (int i=idx[0]*BIN,k=0; k<BIN; k++,i++)
             av1[i] = freq[k];
     });
 
