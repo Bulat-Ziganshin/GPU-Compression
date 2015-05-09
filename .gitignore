@@ -4,3 +4,6 @@
 *.ptx
 *.cubin
 *.fatbin
+
+*.dll
+histogram.exe
