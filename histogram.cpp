@@ -1,17 +1,17 @@
 #include <amp.h>
 #include <iostream>
 #include "timer.h"
-using namespace concurrency;
+//using namespace concurrency;
 
 int main()
 {
     static const unsigned DATASIZE = 1<<29;
-    static const unsigned CHUNK    = 1<<16;
+    static const unsigned CHUNK    = 1<<14;
     static const unsigned BIN      = 1<<8;
     static const unsigned ITER     = CHUNK/sizeof(unsigned);
-    static const unsigned WARP     = 32;
+    static const unsigned WARP     = 64;
+    static const unsigned COMMON   = 16;   // how many threads share single set of counters, i.e. handle the same chunk
 
-    // simple vector addition example
     std::vector<unsigned> inbuf(DATASIZE/sizeof(unsigned));
     std::vector<unsigned> outbuf((inbuf.size()/CHUNK)*BIN);
 
@@ -29,28 +29,40 @@ int main()
     Timer t;
     t.Start();
 
-    concurrency::parallel_for_each ((av0.extent/ITER).tile<WARP>(), [=](concurrency::tiled_index<WARP> idx) restrict(amp)
+    concurrency::parallel_for_each ((av0.extent/(ITER/COMMON)).tile<WARP>(), [=](concurrency::tiled_index<WARP> idx) restrict(amp)
     {
-        tile_static unsigned freq[BIN*WARP];
-        for (int k=0; k<BIN; k++)
-            freq[k*WARP+idx.local[0]] = 0;
+        tile_static unsigned freq[BIN*WARP/COMMON];
+        int chunk_num = idx.global[0]/COMMON;
+//        int sub_chunk = idx.global[0]%COMMON;
+//        int base = BIN*(chunk_num%(WARP/COMMON));
+//        int first_index = chunk_num*ITER + sub_chunk * (ITER/COMMON);
+
+//        for (int k=0; k<BIN; k++)
+//            freq[k*WARP+idx.local[0]] = 0;
+
+        for (int j=idx.local[0]*BIN/COMMON,k=0;  k<BIN/COMMON;  k++,j++)
+            freq[j] = 0;
         idx.barrier.wait_with_tile_static_memory_fence();
 
-        unsigned base = BIN*idx.local[0];
-        for (int i=idx.global[0]*ITER,k=0; k<ITER; k++,i++)
+        int base = BIN*(idx.local[0]/COMMON);
+        for (int i=idx.global[0]*(ITER/COMMON),k=0;  k<ITER/COMMON;  k++,i++)
         {
             unsigned x = av0[i];
-            freq[( x      % BIN)*WARP+idx.local[0]]++;
-            freq[((x>> 8) % BIN)*WARP+idx.local[0]]++;
-            freq[((x>>16) % BIN)*WARP+idx.local[0]]++;
-            freq[((x>>24) % BIN)*WARP+idx.local[0]]++;
+
+#define inc(x) concurrency::atomic_fetch_inc(x)
+//#define inc(x) (*(x))++
+            inc( & freq[base +  x      % BIN]);
+            inc( & freq[base + (x>> 8) % BIN]);
+            inc( & freq[base + (x>>16) % BIN]);
+            inc( & freq[base + (x>>24) % BIN]);
         }
         idx.barrier.wait_with_tile_static_memory_fence();
 
-        for (int i=idx.global[0]*BIN,k=0; k<BIN; k++,i++)
-            av1[i] = freq[k*WARP+idx.local[0]];
+        for (int i=idx.global[0]*BIN/COMMON,j=idx.local[0]*BIN/COMMON,k=0;  k<BIN/COMMON;  k++,i++,j++)
+            av1[i] = freq[j];
     });
 
+//    av1.get_source_accelerator_view().wait();
     av1.synchronize();
     t.Stop();
     std::cout << t.Elapsed() << " milliseconds\n";
