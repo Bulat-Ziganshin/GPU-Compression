@@ -1,3 +1,6 @@
+// Copyright 2015 Bulat Ziganshin
+// Released to public domain
+
 #include <amp.h>
 #include <iostream>
 #include "timer.h"
@@ -9,7 +12,7 @@ int main()
     static const unsigned CHUNK    = 1<<14;
     static const unsigned BIN      = 1<<8;
     static const unsigned ITER     = CHUNK/sizeof(unsigned);
-    static const unsigned WARP     = 64;
+    static const unsigned WARP     = 128;
     static const unsigned COMMON   = 16;   // how many threads share single set of counters, i.e. handle the same chunk
 
     std::vector<unsigned> inbuf(DATASIZE/sizeof(unsigned));
