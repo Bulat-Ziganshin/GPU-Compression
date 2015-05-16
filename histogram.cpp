@@ -32,6 +32,7 @@ int main()
     Timer t;
     t.Start();
 
+for (int i=0; i<10; i++)
     concurrency::parallel_for_each ((av0.extent/(ITER/COMMON)).tile<WARP>(), [=](concurrency::tiled_index<WARP> idx) restrict(amp)
     {
         tile_static unsigned freq[BIN*WARP/COMMON];
@@ -60,6 +61,7 @@ int main()
             av1[i] = freq[j];
     });
 
+//    av1.get_source_accelerator_view().create_marker().wait();
 //    av1.get_source_accelerator_view().wait();
     av1.synchronize();
     t.Stop();
