@@ -12,7 +12,7 @@ int main()
     static const unsigned BIN      = 1<<4;
     static const unsigned ITER     = CHUNK/sizeof(unsigned);
     static const unsigned WARP     = 128;
-    static const unsigned COMMON   = 16;   // how many threads share single set of counters, i.e. handle the same chunk
+    static const unsigned COMMON   = 8;   // how many threads share single set of counters, i.e. handle the same chunk
 
     std::vector<unsigned> inbuf(DATASIZE/sizeof(unsigned));
     std::vector<unsigned> outbuf((DATASIZE/CHUNK)*BIN);
@@ -31,22 +31,23 @@ int main()
     Timer t;
     t.Start();
 
-    concurrency::parallel_for_each (av0.extent/ITER, [=](concurrency::index<1> idx) restrict(amp)
+
+    concurrency::parallel_for_each (av0.extent/(ITER/COMMON), [=](concurrency::index<1> idx) restrict(amp)
     {
         unsigned freq[BIN];
         for (int i=0; i<BIN; i++)
             freq[i] = 0;
 
-        for (int i=0; i<ITER; i++)
+        for (int i=0; i<ITER/COMMON; i++)
         {
-            unsigned x = av0[idx[0]*ITER+i];
+            unsigned x = av0[idx[0]*ITER/COMMON+i];
             freq[ x      % BIN]++;
             freq[(x>> 8) % BIN]++;
             freq[(x>>16) % BIN]++;
             freq[(x>>24) % BIN]++;
         }
         for (int i=0; i<BIN; i++)
-            av1[idx[0]*BIN+i] = freq[i];
+            concurrency::atomic_fetch_add (&av1[idx[0]/COMMON*BIN+i], freq[i]);
     });
 
 //    av1.get_source_accelerator_view().create_marker().wait();
