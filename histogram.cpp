@@ -1,5 +1,6 @@
 #include <amp.h>
 #include <iostream>
+#include "timer.h"
 using namespace concurrency;
 
 int main()
@@ -23,6 +24,10 @@ int main()
     {
         av0[idx] = idx[0]*1234567890;
     });
+    av0.synchronize();
+
+    Timer t;
+    t.Start();
 
     concurrency::parallel_for_each ((av0.extent/ITER).tile<WARP>(), [=](concurrency::tiled_index<WARP> idx) restrict(amp)
     {
@@ -42,6 +47,8 @@ int main()
     });
 
     av1.synchronize();
+    t.Stop();
+    std::cout << t.Elapsed() << " milliseconds\n";
 //    for (int i=0; i<outbuf.size(); i++)
 //      std::cout << (i%256==0? "\n== " : " ") << outbuf[i];
 
