@@ -40,10 +40,10 @@ int main()
         for (int i=idx.global[0]*ITER,k=0; k<ITER; k++,i++)
         {
             unsigned x = av0[i];
-            freq[base + ( x      % BIN)]++;
-            freq[base + ((x>> 8) % BIN)]++;
-            freq[base + ((x>>16) % BIN)]++;
-            freq[base + ((x>>24) % BIN)]++;
+            freq[( x      % BIN)*WARP+idx.local[0]]++;
+            freq[((x>> 8) % BIN)*WARP+idx.local[0]]++;
+            freq[((x>>16) % BIN)*WARP+idx.local[0]]++;
+            freq[((x>>24) % BIN)*WARP+idx.local[0]]++;
         }
         idx.barrier.wait_with_tile_static_memory_fence();
 
