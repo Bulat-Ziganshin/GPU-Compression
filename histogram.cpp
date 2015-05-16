@@ -34,14 +34,19 @@ int main()
         tile_static unsigned freq[BIN*WARP];
         for (int k=0; k<BIN; k++)
             freq[k*WARP+idx.local[0]] = 0;
+        idx.barrier.wait_with_tile_static_memory_fence();
+
+        unsigned base = BIN*idx.local[0];
         for (int i=idx.global[0]*ITER,k=0; k<ITER; k++,i++)
         {
             unsigned x = av0[i];
-            freq[ x      % BIN]++;
-            freq[(x>> 8) % BIN]++;
-            freq[(x>>16) % BIN]++;
-            freq[(x>>24) % BIN]++;
+            freq[base + ( x      % BIN)]++;
+            freq[base + ((x>> 8) % BIN)]++;
+            freq[base + ((x>>16) % BIN)]++;
+            freq[base + ((x>>24) % BIN)]++;
         }
+        idx.barrier.wait_with_tile_static_memory_fence();
+
         for (int i=idx.global[0]*BIN,k=0; k<BIN; k++,i++)
             av1[i] = freq[k*WARP+idx.local[0]];
     });
