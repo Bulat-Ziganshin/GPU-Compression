@@ -32,33 +32,28 @@ int main()
     concurrency::parallel_for_each ((av0.extent/(ITER/COMMON)).tile<WARP>(), [=](concurrency::tiled_index<WARP> idx) restrict(amp)
     {
         tile_static unsigned freq[BIN*WARP/COMMON];
-        int chunk_num = idx.global[0]/COMMON;
-//        int sub_chunk = idx.global[0]%COMMON;
-//        int base = BIN*(chunk_num%(WARP/COMMON));
-//        int first_index = chunk_num*ITER + sub_chunk * (ITER/COMMON);
 
-//        for (int k=0; k<BIN; k++)
-//            freq[k*WARP+idx.local[0]] = 0;
-
-        for (int j=idx.local[0]*BIN/COMMON,k=0;  k<BIN/COMMON;  k++,j++)
+        for (int j=idx.local[0],k=0;  k<BIN/COMMON;  k++,j+=WARP)
             freq[j] = 0;
         idx.barrier.wait_with_tile_static_memory_fence();
 
-        int base = BIN*(idx.local[0]/COMMON);
-        for (int i=idx.global[0]*(ITER/COMMON),k=0;  k<ITER/COMMON;  k++,i++)
+        unsigned INTERLEAVE = WARP/COMMON;
+        unsigned offset = idx.local[0] % INTERLEAVE;
+        unsigned i0 = idx.tile_origin[0]*(ITER/COMMON) + offset*ITER + (idx.local[0] / INTERLEAVE);
+        for (int i=i0,k=0;  k<ITER/COMMON;  k++,i+=COMMON)
         {
             unsigned x = av0[i];
 
 #define inc(x) concurrency::atomic_fetch_inc(x)
 //#define inc(x) (*(x))++
-            inc( & freq[base +  x      % BIN]);
-            inc( & freq[base + (x>> 8) % BIN]);
-            inc( & freq[base + (x>>16) % BIN]);
-            inc( & freq[base + (x>>24) % BIN]);
+            inc( & freq[( x      % BIN)*INTERLEAVE+offset]);
+            inc( & freq[((x>> 8) % BIN)*INTERLEAVE+offset]);
+            inc( & freq[((x>>16) % BIN)*INTERLEAVE+offset]);
+            inc( & freq[((x>>24) % BIN)*INTERLEAVE+offset]);
         }
         idx.barrier.wait_with_tile_static_memory_fence();
 
-        for (int i=idx.global[0]*BIN/COMMON,j=idx.local[0]*BIN/COMMON,k=0;  k<BIN/COMMON;  k++,i++,j++)
+        for (int i=idx.tile_origin[0]*(BIN/COMMON)+idx.local[0], j=idx.local[0], k=0;  k<BIN/COMMON;  k++,i+=WARP,j+=WARP)
             av1[i] = freq[j];
     });
 
