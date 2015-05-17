@@ -8,55 +8,64 @@
 int main()
 {
     static const unsigned DATASIZE = 1<<25;
-    static const unsigned CHUNK    = 1<<17;
-    static const unsigned BIN      = 1<<4;
-    static const unsigned ITER     = CHUNK/sizeof(unsigned);
-    static const unsigned WARP     = 128;
-    static const unsigned COMMON   = 8;   // how many threads share single set of counters, i.e. handle the same chunk
+    static const unsigned BIN      = 1<<4;   // count low 4-bit freqs
+    static const unsigned CHUNK_CNT= 1<<8;   // split data into 256 blocks and count each one separately
+    static const unsigned CHUNK    = DATASIZE/CHUNK_CNT;         // 128k
+    static const unsigned ITER     = CHUNK/sizeof(unsigned);     //  32k
+    static const unsigned STRIDE   = 128;   // how many elements process by the single thread
 
-    std::vector<unsigned> inbuf(DATASIZE/sizeof(unsigned));
-    std::vector<unsigned> outbuf((DATASIZE/CHUNK)*BIN);
+    std::vector<unsigned> inbuf(CHUNK_CNT*ITER);
+    std::vector<unsigned> outbuf(CHUNK_CNT*BIN);
 
-    concurrency::array_view<unsigned, 1> av0( inbuf.size(),  inbuf);
-    concurrency::array_view<unsigned, 1> av1(outbuf.size(), outbuf);
+    concurrency::array_view<unsigned, 2> av0(CHUNK_CNT, ITER, inbuf);
+    concurrency::array_view<unsigned, 2> av1(CHUNK_CNT, BIN, outbuf);
     av0.discard_data();
     av1.discard_data();
 
-    concurrency::parallel_for_each (av0.extent, [=](concurrency::index<1> idx) restrict(amp)
+    concurrency::parallel_for_each (av0.extent, [=](concurrency::index<2> idx) restrict(amp)
     {
-        av0[idx] = idx[0]*1234567890;
+        av0[idx] = (av0.extent[1]*idx[0]+idx[1]) * 1234567890;
     });
     av0.synchronize();
+
+//    for (int i=0; i<5; i++)
+//      std::cout << (i%256==0? "\n== " : " ") << inbuf[i];
 
     Timer t;
     t.Start();
 
+    concurrency::extent<2>  data_extent (av0.extent[0], av0.extent[1]/STRIDE);
+    static const unsigned WARP = 256, WARP1 = 64, WARP0 = WARP/WARP1;
 
-    concurrency::parallel_for_each (av0.extent/(ITER/COMMON), [=](concurrency::index<1> idx) restrict(amp)
+for (int i=0; i<320; i++)  // measure speed on 10 GB dataset
+    concurrency::parallel_for_each (data_extent.tile<WARP0,WARP1>(), [=](concurrency::tiled_index<WARP0,WARP1> idx) restrict(amp)
     {
-        unsigned freq[BIN];
+        tile_static unsigned freq[BIN*WARP];
+        unsigned loc_idx = idx.local[0]*WARP0+idx.local[1];
         for (int i=0; i<BIN; i++)
-            freq[i] = 0;
+            freq[i*WARP+loc_idx] = 0;
+        idx.barrier.wait_with_tile_static_memory_fence();
 
-        for (int i=0; i<ITER/COMMON; i++)
+        for (int i=0; i<STRIDE; i++)
         {
-            unsigned x = av0[idx[0]*ITER/COMMON+i];
-            freq[ x      % BIN]++;
-            freq[(x>> 8) % BIN]++;
-            freq[(x>>16) % BIN]++;
-            freq[(x>>24) % BIN]++;
+            unsigned x = av0 (idx.global[0], i*(ITER/STRIDE)+idx.global[1]);
+//          unsigned x = av0 (idx.global[0], idx.global[1]*STRIDE+i);             // without memory read coalescing - 11x slower!
+            freq[( x      % BIN)*WARP+loc_idx]++;
+            freq[((x>> 8) % BIN)*WARP+loc_idx]++;
+            freq[((x>>16) % BIN)*WARP+loc_idx]++;
+            freq[((x>>24) % BIN)*WARP+loc_idx]++;
         }
+        idx.barrier.wait_with_tile_static_memory_fence();
+
+        unsigned sum = 0;
         for (int i=0; i<BIN; i++)
-            concurrency::atomic_fetch_add (&av1[idx[0]/COMMON*BIN+i], freq[i]);
+            sum += freq [i*WARP + loc_idx];
+        concurrency::atomic_fetch_add (&av1(idx.global[0], idx.local[1] % BIN),  sum);
     });
 
-//    av1.get_source_accelerator_view().create_marker().wait();
-//    av1.get_source_accelerator_view().wait();
     av1.synchronize();
     t.Stop();
     std::cout << t.Elapsed() << " milliseconds\n";
-//    for (int i=0; i<outbuf.size(); i++)
-//      std::cout << (i%256==0? "\n== " : " ") << outbuf[i];
 
     return 0;
 }
