@@ -37,7 +37,9 @@ int main()
     concurrency::extent<2>  data_extent (av0.extent[0], av0.extent[1]/STRIDE);
     static const unsigned WARP = 256, WARP1 = 64, WARP0 = WARP/WARP1;
 
-for (int i=0; i<320; i++)  // measure speed on 10 GB dataset
+    const uint64_t DATASET = uint64_t(10)<<30;
+    std::cout << "Measuring on " << (DATASET>>30) << " GB dataset";
+for (int i=0; i<DATASET/DATASIZE; i++)
     concurrency::parallel_for_each (data_extent.tile<WARP0,WARP1>(), [=](concurrency::tiled_index<WARP0,WARP1> idx) restrict(amp)
     {
         tile_static unsigned freq[BIN*WARP];
@@ -65,7 +67,7 @@ for (int i=0; i<320; i++)  // measure speed on 10 GB dataset
 
     av1.synchronize();
     t.Stop();
-    std::cout << t.Elapsed() << " milliseconds\n";
+    std::cout << ": " << t.Elapsed() << " milliseconds\n";
 
     return 0;
 }
