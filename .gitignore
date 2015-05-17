@@ -6,5 +6,8 @@
 *.fatbin
 
 *.dll
-histogram.exe
 *.exe
+*.zip
+
+1/*
+0/*
