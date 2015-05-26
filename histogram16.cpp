@@ -36,19 +36,20 @@ int main()
     for (int i=0; i<DATASET/DATASIZE; i++)
     {
         concurrency::extent<2>  data_extent (srcdata.extent[0], srcdata.extent[1]/STRIDE);
-        static const unsigned TILE = 256, TILE1 = 64, TILE0 = TILE/TILE1;  // single tile processes TILE0 blocks and TILE1 independent parts in every block
+        static const unsigned TILE = 256, TILE1 = 128, TILE0 = TILE/TILE1;  // single tile processes TILE0 blocks and TILE1 independent parts in every block
 
         concurrency::parallel_for_each (data_extent.tile<TILE0,TILE1>(), [=](concurrency::tiled_index<TILE0,TILE1> idx) restrict(amp)
         {
-            tile_static unsigned freq[BINS*TILE];
-            unsigned loc_idx = idx.local[0]*TILE1+idx.local[1];
-            for (int i=0; i<BINS; i++)
-                freq[i*TILE+loc_idx] = 0;
+            tile_static unsigned freq[BINS][TILE];
+            int loc_idx = idx.local[0]*TILE1+idx.local[1];
+            // init bins that will be used by this thread
+            for (int bin=0; bin<BINS; bin++)
+                freq[bin][loc_idx] = 0;
             //idx.barrier.wait_with_tile_static_memory_fence();   // may improve performance
 
             for (int i=0; i<STRIDE; i++)
             {
-                #define count(bin)  (freq[(bin)*TILE+loc_idx]++)
+                #define count(bin)  (freq[bin][loc_idx]++)
                 unsigned x = srcdata (idx.global[0], i*(ITER/STRIDE)+idx.global[1]);
                 count( x      % BINS);
                 count((x>> 8) % BINS);
@@ -58,11 +59,12 @@ int main()
             }
             idx.barrier.wait_with_tile_static_memory_fence();
 
-            // We update only sum per thread, that's correct only if TILE1 >= BINS
+            // We update only one sum per thread, which is correct only if TILE1 >= BINS
             unsigned sum = 0;
+            int bin = idx.local[1] % BINS;
             for (int i=0; i<BINS; i++)
-                sum += freq [loc_idx*BINS + i];
-            concurrency::atomic_fetch_add (&histogram(idx.global[0], (loc_idx*BINS)/TILE),  sum);
+                sum  +=  freq [bin] [idx.local[0]*TILE1 + (idx.local[1]/BINS)*BINS + i];
+            concurrency::atomic_fetch_add (&histogram(idx.global[0],bin), sum);
         });
     }
 
