@@ -12,7 +12,8 @@ int main()
     static const unsigned CHUNK_CNT= 1<<8;   // split data into 256 blocks and calculate histogram for each one separately
     static const unsigned CHUNK    = DATASIZE/CHUNK_CNT;         // 128k
     static const unsigned ITER     = CHUNK/sizeof(unsigned);     //  32k
-    static const unsigned STRIDE   = 128;   // how many elements to process by the single thread
+    static const unsigned STRIDE   = 128;   // how many dwords to process by the single thread
+    static const unsigned TILE = 256, TILE1 = 128, TILE0 = TILE/TILE1;  // single tile includes TILE0 blocks * TILE1 independent parts in the every block
 
     std::vector<unsigned> inbuf(CHUNK_CNT*ITER);
     std::vector<unsigned> outbuf(CHUNK_CNT*BINS);
@@ -22,7 +23,7 @@ int main()
     srcdata.discard_data();
     histogram.discard_data();
 
-    // fill with pseudo-random data
+    // Fill with pseudo-random data
     concurrency::parallel_for_each (srcdata.extent, [=](concurrency::index<2> idx) restrict(amp)
     {
         srcdata[idx] = (srcdata.extent[1]*idx[0]+idx[1]) * 1234567891;
@@ -30,14 +31,12 @@ int main()
     srcdata.synchronize();
 
     const uint64_t DATASET = uint64_t(10)<<30;
-    printf("Measuring on %d GiB random data", int(DATASET>>30));
+    printf("Histogram%d of %d GiB random data", BINS, int(DATASET>>30));
     Timer t;  t.Start();
 
     for (int i=0; i<DATASET/DATASIZE; i++)
     {
         concurrency::extent<2>  data_extent (srcdata.extent[0], srcdata.extent[1]/STRIDE);
-        static const unsigned TILE = 256, TILE1 = 128, TILE0 = TILE/TILE1;  // single tile processes TILE0 blocks and TILE1 independent parts in every block
-
         concurrency::parallel_for_each (data_extent.tile<TILE0,TILE1>(), [=](concurrency::tiled_index<TILE0,TILE1> idx) restrict(amp)
         {
             tile_static unsigned freq[BINS][TILE];
