@@ -41,7 +41,7 @@ int main()
         concurrency::parallel_for_each (data_extent.tile<TILE0,TILE1>(), [=](concurrency::tiled_index<TILE0,TILE1> idx) restrict(amp)
         {
             tile_static unsigned freq[BINS][TILE];
-            int loc_idx = idx.local[0]*TILE1+idx.local[1];
+            unsigned loc_idx = idx.local[0]*TILE1+idx.local[1];
             // init bins that will be used by this thread
             for (int bin=0; bin<BINS; bin++)
                 freq[bin][loc_idx] = 0;
@@ -59,11 +59,12 @@ int main()
             }
             idx.barrier.wait_with_tile_static_memory_fence();
 
-            // We update only one sum per thread, which is correct only if TILE1 >= BINS
+            // We update only one histogram[] entry per thread, that's correct only if TILE1 >= BINS
+            const unsigned STRIDE1 = TILE1/BINS;
+            unsigned bin = idx.local[1] / STRIDE1;
             unsigned sum = 0;
-            int bin = idx.local[1] % BINS;
             for (int i=0; i<BINS; i++)
-                sum  +=  freq [bin] [idx.local[0]*TILE1 + (idx.local[1]/BINS)*BINS + i];
+                sum  +=  freq [bin] [idx.local[0]*TILE1 + i*STRIDE1 + idx.local[1]%STRIDE1];  // distribute memory accesses from the single warp accross STRIDE1 banks
             concurrency::atomic_fetch_add (&histogram(idx.global[0],bin), sum);
         });
     }
