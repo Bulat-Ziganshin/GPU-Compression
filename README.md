@@ -1,11 +1,11 @@
 # GPU-Compression
 Examples of data compression algorithms running on GPU
 
-Accelerators: enum all accelerators and print all their properties
+**Accelerators**: enum all accelerators and print all their properties
 
-Histogram16: build 16-bin histogram of lower 4 bits of each byte. That's the maximum amount that can be processed (on my GPU) without using atomics. The speed is 50 GB/s and it's probably limited by amount of arithmetic computations performed.
+**Histogram16**: build 16-bin histogram of lower 4 bits of each byte. That's the maximum amount that can be processed (on my GPU) without using atomics. The speed is 50 GB/s and it's probably limited by amount of arithmetic computations performed.
 
-Histogram: build 256-bin histogram. The speed is around 15 GB/s and i expect that on newer GPUs with faster atomics it will be much faster.
+**Histogram**: build 256-bin histogram. The speed is  15 GB/s and i expect that on newer GPUs with faster atomics it will be much faster.
 
 In order to run executables you may need to installl Microsoft redistributable package.
 
